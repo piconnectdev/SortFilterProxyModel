@@ -219,6 +219,28 @@ void QQmlSortFilterProxyModel::componentComplete()
     sort(0);
 }
 
+QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) const
+{
+    QJSValue ret;
+    if (m_proxyRoles.isEmpty() &&
+            m_sourceGetMethod.invoke(sourceModel(),
+                                     Q_RETURN_ARG(QJSValue, ret),
+                                     Q_ARG(int, sourceIndex.row())))
+    {
+        return QVariant::fromValue(ret);
+    }
+
+    QVariantMap map;
+    const auto roles = roleNames();
+
+    for (auto it = roles.cbegin(); it != roles.cend(); ++it) {
+        map[it.value()] = sourceData(sourceIndex, it.key());
+    }
+    map["index"] = sourceIndex.row();
+
+    return map;
+}
+
 QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex& sourceIndex, const QString& roleName) const
 {
     int role = roleNames().key(roleName.toUtf8());
@@ -383,6 +405,15 @@ void QQmlSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
     if (sourceModel && sourceModel->roleNames().isEmpty()) { // workaround for when a model has no roles and roles are added when the model is populated (ListModel)
         // QTBUG-57971
         connect(sourceModel, &QAbstractItemModel::rowsInserted, this, &QQmlSortFilterProxyModel::initRoles);
+    }
+    if (sourceModel) {
+        m_sourceGetMethod = sourceModel->metaObject()->method(
+                    sourceModel->metaObject()->indexOfMethod("get(int)"));
+        if (m_sourceGetMethod.returnType() != QMetaType::type("QJSValue")) {
+            m_sourceGetMethod = {};
+        }
+    } else {
+        m_sourceGetMethod = {};
     }
     QSortFilterProxyModel::setSourceModel(sourceModel);
 }
