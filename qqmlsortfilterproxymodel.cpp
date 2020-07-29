@@ -221,13 +221,12 @@ void QQmlSortFilterProxyModel::componentComplete()
 
 QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) const
 {
-    QJSValue ret;
-    if (m_proxyRoles.isEmpty() &&
-            m_sourceGetMethod.invoke(sourceModel(),
-                                     Q_RETURN_ARG(QJSValue, ret),
-                                     Q_ARG(int, sourceIndex.row())))
-    {
-        return QVariant::fromValue(ret);
+    if (m_proxyRoles.isEmpty() && m_sourceGetMethod.isValid()) {
+        QVariant ret(m_sourceGetMethod.returnType(), nullptr);
+        QGenericReturnArgument retArg(m_sourceGetMethod.typeName(), ret.data());
+        m_sourceGetMethod.invoke(sourceModel(), retArg,
+                                 Q_ARG(int, sourceIndex.row()));
+        return ret;
     }
 
     QVariantMap map;
@@ -409,9 +408,6 @@ void QQmlSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
     if (sourceModel) {
         m_sourceGetMethod = sourceModel->metaObject()->method(
                     sourceModel->metaObject()->indexOfMethod("get(int)"));
-        if (m_sourceGetMethod.returnType() != QMetaType::type("QJSValue")) {
-            m_sourceGetMethod = {};
-        }
     } else {
         m_sourceGetMethod = {};
     }
