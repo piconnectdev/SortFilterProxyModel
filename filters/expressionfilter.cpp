@@ -57,6 +57,7 @@ bool ExpressionFilter::filterRow(const QModelIndex& sourceIndex, const QQmlSortF
         const QVariant modelMap = proxyModel.sourceData(sourceIndex);
         QQmlContext context(qmlContext(this));
         context.setContextProperty("index", sourceIndex.row());
+        context.setContextProperty("modelIndex", sourceIndex);
         context.setContextProperty("model", modelMap);
 
         QQmlExpression expression(m_scriptString, &context);
