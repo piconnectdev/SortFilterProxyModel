@@ -226,6 +226,11 @@ QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) co
         QGenericReturnArgument retArg(m_sourceGetMethod.typeName(), ret.data());
         m_sourceGetMethod.invoke(sourceModel(), retArg,
                                  Q_ARG(int, sourceIndex.row()));
+
+        if (ret.userType() == QMetaType::QVariant) {
+            ret = ret.value<QVariant>();
+        }
+
         return ret;
     }
 
