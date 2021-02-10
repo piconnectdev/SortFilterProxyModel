@@ -224,14 +224,26 @@ QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) co
     if (m_proxyRoles.isEmpty() && m_sourceGetMethod.isValid()) {
         QVariant ret(m_sourceGetMethod.returnType(), nullptr);
         QGenericReturnArgument retArg(m_sourceGetMethod.typeName(), ret.data());
-        m_sourceGetMethod.invoke(sourceModel(), retArg,
-                                 Q_ARG(int, sourceIndex.row()));
 
-        if (ret.userType() == QMetaType::QVariant) {
-            ret = ret.value<QVariant>();
+        bool success = false;
+
+        if (m_sourceGetMethod.parameterType(0) == QMetaType::Int) {
+            success = m_sourceGetMethod.invoke(sourceModel(), retArg,
+                                               Q_ARG(int, sourceIndex.row()));
+        } else {
+            success = m_sourceGetMethod.invoke(sourceModel(), retArg,
+                                               Q_ARG(QModelIndex, sourceIndex));
         }
 
-        return ret;
+        if (success) {
+            if (ret.userType() == QMetaType::QVariant) {
+                ret = ret.value<QVariant>();
+            }
+
+            return ret;
+        } else {
+            qWarning() << "Failed to invoke the source model's get() method!";
+        }
     }
 
     QVariantMap map;
@@ -412,7 +424,11 @@ void QQmlSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
     }
     if (sourceModel) {
         m_sourceGetMethod = sourceModel->metaObject()->method(
-                    sourceModel->metaObject()->indexOfMethod("get(int)"));
+                    sourceModel->metaObject()->indexOfMethod("get(QModelIndex)"));
+        if (!m_sourceGetMethod.isValid()) {
+            m_sourceGetMethod = sourceModel->metaObject()->method(
+                        sourceModel->metaObject()->indexOfMethod("get(int)"));
+        }
     } else {
         m_sourceGetMethod = {};
     }
