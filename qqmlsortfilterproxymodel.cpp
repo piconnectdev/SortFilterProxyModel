@@ -221,7 +221,12 @@ void QQmlSortFilterProxyModel::componentComplete()
 
 QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) const
 {
-    if (m_proxyRoles.isEmpty() && m_sourceGetMethod.isValid()) {
+    // Yes, this does not include the proxy roles defined through this model.
+    // We can still get to the proxy role data through data(), even though that
+    // is a little more to type.
+    // Proxying the source model's get provides a significant perforamance boost,
+    // so this inconvience is accepted.
+    if (m_sourceGetMethod.isValid()) {
         QVariant ret(m_sourceGetMethod.returnType(), nullptr);
         QGenericReturnArgument retArg(m_sourceGetMethod.typeName(), ret.data());
 
