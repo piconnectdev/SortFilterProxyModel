@@ -23,6 +23,7 @@ class QQmlSortFilterProxyModel : public QSortFilterProxyModel,
 
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(bool delayed READ delayed WRITE setDelayed NOTIFY delayedChanged)
+    Q_PROPERTY(QVariantList ignoredRoles READ ignoredRoles WRITE setIgnoredRoles NOTIFY ignoredRolesChanged)
 
     Q_PROPERTY(QString filterRoleName READ filterRoleName WRITE setFilterRoleName NOTIFY filterRoleNameChanged)
     Q_PROPERTY(QString filterPattern READ filterPattern WRITE setFilterPattern NOTIFY filterPatternChanged)
@@ -52,6 +53,9 @@ public:
 
     bool delayed() const;
     void setDelayed(bool delayed);
+
+    QVariantList ignoredRoles() const;
+    void setIgnoredRoles(const QVariantList &ignoredRoles);
 
     const QString& filterRoleName() const;
     void setFilterRoleName(const QString& filterRoleName);
@@ -96,6 +100,7 @@ public:
 Q_SIGNALS:
     void countChanged();
     void delayedChanged();
+    void ignoredRolesChanged();
 
     void filterRoleNameChanged();
     void filterPatternSyntaxChanged();
@@ -123,6 +128,7 @@ private Q_SLOTS:
     void updateRoles();
     void initRoles();
     void onDataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QVector<int>& roles);
+    void _q_sourceDataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QVector<int>& roles);
     void queueInvalidateProxyRoles();
     void invalidateProxyRoles();
 
@@ -156,6 +162,7 @@ private:
     bool m_invalidateFilterQueued = false;
     bool m_invalidateQueued = false;
     bool m_invalidateProxyRolesQueued = false;
+    QVariantList m_ignoredRoles;
 };
 
 }
