@@ -75,6 +75,21 @@ void QQmlSortFilterProxyModel::setDelayed(bool delayed)
     Q_EMIT delayedChanged();
 }
 
+QVariantList QQmlSortFilterProxyModel::ignoredRoles() const
+{
+    return m_ignoredRoles;
+}
+
+void QQmlSortFilterProxyModel::setIgnoredRoles(const QVariantList &ignoredRoles)
+{
+    if (m_ignoredRoles == ignoredRoles) {
+        return;
+    }
+
+    m_ignoredRoles = ignoredRoles;
+    emit ignoredRolesChanged();
+}
+
 const QString& QQmlSortFilterProxyModel::filterRoleName() const
 {
     return m_filterRoleName;
@@ -537,6 +552,46 @@ void QQmlSortFilterProxyModel::onDataChanged(const QModelIndex& topLeft, const Q
     Q_UNUSED(roles);
     if (!roles.isEmpty() && !m_proxyRoleNumbers.empty() && roles != m_proxyRoleNumbers)
         Q_EMIT dataChanged(topLeft, bottomRight, m_proxyRoleNumbers);
+}
+
+void QQmlSortFilterProxyModel::_q_sourceDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles)
+{
+    static QMetaMethod super_q_sourceDataChanged = [] {
+        int id = QSortFilterProxyModel::staticMetaObject.indexOfSlot("_q_sourceDataChanged(QModelIndex,QModelIndex,QVector<int>)");
+        return QSortFilterProxyModel::staticMetaObject.method(id);
+    }();
+    Q_ASSERT(super_q_sourceDataChanged.isValid());
+
+    // Ignore columns other than the first
+    bool skipFilters = topLeft.column() > 0;
+
+    if (!skipFilters) {
+        // See if this is only about ignored roles and if so, skip filters.
+        QVector<int> filteredRoles = roles;
+
+        for (const auto &role : qAsConst(m_ignoredRoles)) {
+            bool ok;
+            auto iRole = role.toInt(&ok);
+            if (!ok) {
+                const auto name = role.toString();
+                iRole = roleForName(name);
+            }
+            if (iRole > -1) {
+                filteredRoles.removeAll(iRole);
+            }
+        }
+
+        skipFilters = filteredRoles.isEmpty();
+    }
+
+    if (skipFilters) {
+        emit dataChanged(mapFromSource(topLeft), mapFromSource(bottomRight), roles);
+        return;
+    }
+
+    bool ok = super_q_sourceDataChanged.invoke(this, Q_ARG(QModelIndex, topLeft), Q_ARG(QModelIndex, bottomRight), Q_ARG(QVector<int>, roles));
+    Q_ASSERT(ok);
+    Q_UNUSED(ok);
 }
 
 void QQmlSortFilterProxyModel::queueInvalidateProxyRoles()
