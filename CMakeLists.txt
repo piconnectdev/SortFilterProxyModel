@@ -45,8 +45,6 @@ add_library(SortFilterProxyModel OBJECT
     proxyroles/regexprole.cpp
     sorters/filtersorter.cpp
     proxyroles/filterrole.cpp
-    utils/utils.cpp
-    utils/utils.h
 )
 
 target_link_libraries(SortFilterProxyModel
