@@ -242,7 +242,11 @@ QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) co
     // Proxying the source model's get provides a significant perforamance boost,
     // so this inconvience is accepted.
     if (m_sourceGetMethod.isValid()) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         QVariant ret(m_sourceGetMethod.returnType(), nullptr);
+#else
+        QVariant ret(m_sourceGetMethod.returnMetaType(), nullptr);
+#endif
         QGenericReturnArgument retArg(m_sourceGetMethod.typeName(), ret.data());
 
         bool success = false;
