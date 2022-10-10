@@ -23,10 +23,10 @@ class QQmlSortFilterProxyModel : public QSortFilterProxyModel,
 
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(bool delayed READ delayed WRITE setDelayed NOTIFY delayedChanged)
+    Q_PROPERTY(QVariantList ignoredRoles READ ignoredRoles WRITE setIgnoredRoles NOTIFY ignoredRolesChanged)
 
     Q_PROPERTY(QString filterRoleName READ filterRoleName WRITE setFilterRoleName NOTIFY filterRoleNameChanged)
     Q_PROPERTY(QString filterPattern READ filterPattern WRITE setFilterPattern NOTIFY filterPatternChanged)
-    Q_PROPERTY(PatternSyntax filterPatternSyntax READ filterPatternSyntax WRITE setFilterPatternSyntax NOTIFY filterPatternSyntaxChanged)
     Q_PROPERTY(QVariant filterValue READ filterValue WRITE setFilterValue NOTIFY filterValueChanged)
 
     Q_PROPERTY(QString sortRoleName READ sortRoleName WRITE setSortRoleName NOTIFY sortRoleNameChanged)
@@ -37,15 +37,6 @@ class QQmlSortFilterProxyModel : public QSortFilterProxyModel,
     Q_PROPERTY(QQmlListProperty<qqsfpm::ProxyRole> proxyRoles READ proxyRolesListProperty)
 
 public:
-    enum PatternSyntax {
-        RegExp = QRegExp::RegExp,
-        Wildcard = QRegExp::Wildcard,
-        FixedString = QRegExp::FixedString,
-        RegExp2 = QRegExp::RegExp2,
-        WildcardUnix = QRegExp::WildcardUnix,
-        W3CXmlSchema11 = QRegExp::W3CXmlSchema11 };
-    Q_ENUMS(PatternSyntax)
-
     QQmlSortFilterProxyModel(QObject* parent = 0);
 
     int count() const;
@@ -53,14 +44,14 @@ public:
     bool delayed() const;
     void setDelayed(bool delayed);
 
+    QVariantList ignoredRoles() const;
+    void setIgnoredRoles(const QVariantList &ignoredRoles);
+
     const QString& filterRoleName() const;
     void setFilterRoleName(const QString& filterRoleName);
 
     QString filterPattern() const;
     void setFilterPattern(const QString& filterPattern);
-
-    PatternSyntax filterPatternSyntax() const;
-    void setFilterPatternSyntax(PatternSyntax patternSyntax);
 
     const QVariant& filterValue() const;
     void setFilterValue(const QVariant& filterValue);
@@ -74,6 +65,7 @@ public:
     void classBegin() override;
     void componentComplete() override;
 
+    QVariant sourceData(const QModelIndex& sourceIndex) const;
     QVariant sourceData(const QModelIndex& sourceIndex, const QString& roleName) const;
     QVariant sourceData(const QModelIndex& sourceIndex, int role) const;
 
@@ -95,9 +87,9 @@ public:
 Q_SIGNALS:
     void countChanged();
     void delayedChanged();
+    void ignoredRolesChanged();
 
     void filterRoleNameChanged();
-    void filterPatternSyntaxChanged();
     void filterPatternChanged();
     void filterValueChanged();
 
@@ -122,6 +114,7 @@ private Q_SLOTS:
     void updateRoles();
     void initRoles();
     void onDataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QVector<int>& roles);
+    void _q_sourceDataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QVector<int>& roles);
     void queueInvalidateProxyRoles();
     void invalidateProxyRoles();
 
@@ -140,6 +133,8 @@ private:
     void onProxyRoleRemoved(ProxyRole *proxyRole) override;
     void onProxyRolesCleared() override;
 
+    QMetaMethod m_sourceGetMethod;
+
     bool m_delayed;
     QString m_filterRoleName;
     QVariant m_filterValue;
@@ -153,6 +148,7 @@ private:
     bool m_invalidateFilterQueued = false;
     bool m_invalidateQueued = false;
     bool m_invalidateProxyRolesQueued = false;
+    QVariantList m_ignoredRoles;
 };
 
 }

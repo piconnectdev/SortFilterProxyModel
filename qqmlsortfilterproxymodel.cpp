@@ -75,6 +75,21 @@ void QQmlSortFilterProxyModel::setDelayed(bool delayed)
     Q_EMIT delayedChanged();
 }
 
+QVariantList QQmlSortFilterProxyModel::ignoredRoles() const
+{
+    return m_ignoredRoles;
+}
+
+void QQmlSortFilterProxyModel::setIgnoredRoles(const QVariantList &ignoredRoles)
+{
+    if (m_ignoredRoles == ignoredRoles) {
+        return;
+    }
+
+    m_ignoredRoles = ignoredRoles;
+    emit ignoredRolesChanged();
+}
+
 const QString& QQmlSortFilterProxyModel::filterRoleName() const
 {
     return m_filterRoleName;
@@ -92,35 +107,18 @@ void QQmlSortFilterProxyModel::setFilterRoleName(const QString& filterRoleName)
 
 QString QQmlSortFilterProxyModel::filterPattern() const
 {
-    return filterRegExp().pattern();
+    return filterRegularExpression().pattern();
 }
 
 void QQmlSortFilterProxyModel::setFilterPattern(const QString& filterPattern)
 {
-    QRegExp regExp = filterRegExp();
+    QRegularExpression regExp = filterRegularExpression();
     if (regExp.pattern() == filterPattern)
         return;
 
     regExp.setPattern(filterPattern);
-    QSortFilterProxyModel::setFilterRegExp(regExp);
+    QSortFilterProxyModel::setFilterRegularExpression(regExp);
     Q_EMIT filterPatternChanged();
-}
-
-QQmlSortFilterProxyModel::PatternSyntax QQmlSortFilterProxyModel::filterPatternSyntax() const
-{
-    return static_cast<PatternSyntax>(filterRegExp().patternSyntax());
-}
-
-void QQmlSortFilterProxyModel::setFilterPatternSyntax(QQmlSortFilterProxyModel::PatternSyntax patternSyntax)
-{
-    QRegExp regExp = filterRegExp();
-    QRegExp::PatternSyntax patternSyntaxTmp = static_cast<QRegExp::PatternSyntax>(patternSyntax);
-    if (regExp.patternSyntax() == patternSyntaxTmp)
-        return;
-
-    regExp.setPatternSyntax(patternSyntaxTmp);
-    QSortFilterProxyModel::setFilterRegExp(regExp);
-    Q_EMIT filterPatternSyntaxChanged();
 }
 
 const QVariant& QQmlSortFilterProxyModel::filterValue() const
@@ -208,15 +206,62 @@ void QQmlSortFilterProxyModel::componentComplete()
 {
     m_completed = true;
 
-    for (const auto& filter : m_filters)
+    for (const auto& filter : qAsConst(m_filters))
         filter->proxyModelCompleted(*this);
-    for (const auto& sorter : m_sorters)
+    for (const auto& sorter : qAsConst(m_sorters))
         sorter->proxyModelCompleted(*this);
-    for (const auto& proxyRole : m_proxyRoles)
+    for (const auto& proxyRole : qAsConst(m_proxyRoles))
         proxyRole->proxyModelCompleted(*this);
 
     invalidate();
     sort(0);
+}
+
+QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) const
+{
+    // Yes, this does not include the proxy roles defined through this model.
+    // We can still get to the proxy role data through data(), even though that
+    // is a little more to type.
+    // Proxying the source model's get provides a significant perforamance boost,
+    // so this inconvience is accepted.
+    if (m_sourceGetMethod.isValid()) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        QVariant ret(m_sourceGetMethod.returnType(), nullptr);
+#else
+        QVariant ret(m_sourceGetMethod.returnMetaType(), nullptr);
+#endif
+        QGenericReturnArgument retArg(m_sourceGetMethod.typeName(), ret.data());
+
+        bool success = false;
+
+        if (m_sourceGetMethod.parameterType(0) == QMetaType::Int) {
+            success = m_sourceGetMethod.invoke(sourceModel(), retArg,
+                                               Q_ARG(int, sourceIndex.row()));
+        } else {
+            success = m_sourceGetMethod.invoke(sourceModel(), retArg,
+                                               Q_ARG(QModelIndex, sourceIndex));
+        }
+
+        if (success) {
+            if (ret.userType() == QMetaType::QVariant) {
+                ret = ret.value<QVariant>();
+            }
+
+            return ret;
+        } else {
+            qWarning() << "Failed to invoke the source model's get() method!";
+        }
+    }
+
+    QVariantMap map;
+    const auto roles = roleNames();
+
+    for (auto it = roles.cbegin(); it != roles.cend(); ++it) {
+        map[it.value()] = sourceData(sourceIndex, it.key());
+    }
+    map["index"] = sourceIndex.row();
+
+    return map;
 }
 
 QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex& sourceIndex, const QString& roleName) const
@@ -266,7 +311,7 @@ QVariantMap QQmlSortFilterProxyModel::get(int row) const
     QVariantMap map;
     QModelIndex modelIndex = index(row, 0);
     QHash<int, QByteArray> roles = roleNames();
-    for (QHash<int, QByteArray>::const_iterator it = roles.begin(); it != roles.end(); ++it)
+    for (QHash<int, QByteArray>::const_iterator it = roles.cbegin(); it != roles.cend(); ++it)
         map.insert(it.value(), data(modelIndex, it.key()));
     return map;
 }
@@ -339,7 +384,7 @@ bool QQmlSortFilterProxyModel::filterAcceptsRow(int source_row, const QModelInde
     bool valueAccepted = !m_filterValue.isValid() || ( m_filterValue == sourceModel()->data(sourceIndex, filterRole()) );
     bool baseAcceptsRow = valueAccepted && QSortFilterProxyModel::filterAcceptsRow(source_row, source_parent);
     baseAcceptsRow = baseAcceptsRow && std::all_of(m_filters.begin(), m_filters.end(),
-        [=, &source_parent] (Filter* filter) {
+        [=] (Filter* filter) {
             return filter->filterAcceptsRow(sourceIndex, *this);
         }
     );
@@ -383,6 +428,16 @@ void QQmlSortFilterProxyModel::setSourceModel(QAbstractItemModel *sourceModel)
     if (sourceModel && sourceModel->roleNames().isEmpty()) { // workaround for when a model has no roles and roles are added when the model is populated (ListModel)
         // QTBUG-57971
         connect(sourceModel, &QAbstractItemModel::rowsInserted, this, &QQmlSortFilterProxyModel::initRoles);
+    }
+    if (sourceModel) {
+        m_sourceGetMethod = sourceModel->metaObject()->method(
+                    sourceModel->metaObject()->indexOfMethod("get(QModelIndex)"));
+        if (!m_sourceGetMethod.isValid()) {
+            m_sourceGetMethod = sourceModel->metaObject()->method(
+                        sourceModel->metaObject()->indexOfMethod("get(int)"));
+        }
+    } else {
+        m_sourceGetMethod = {};
     }
     QSortFilterProxyModel::setSourceModel(sourceModel);
 }
@@ -436,8 +491,9 @@ void QQmlSortFilterProxyModel::updateRoleNames()
     auto roles = m_roleNames.keys();
     auto maxIt = std::max_element(roles.cbegin(), roles.cend());
     int maxRole = maxIt != roles.cend() ? *maxIt : -1;
-    for (auto proxyRole : m_proxyRoles) {
-        for (auto roleName : proxyRole->names()) {
+    for (auto proxyRole : qAsConst(m_proxyRoles)) {
+        const auto proxyRoleNames = proxyRole->names();
+        for (const auto &roleName : proxyRoleNames) {
             ++maxRole;
             m_roleNames[maxRole] = roleName.toUtf8();
             m_proxyRoleMap[maxRole] = {proxyRole, roleName};
@@ -485,6 +541,46 @@ void QQmlSortFilterProxyModel::onDataChanged(const QModelIndex& topLeft, const Q
         Q_EMIT dataChanged(topLeft, bottomRight, m_proxyRoleNumbers);
 }
 
+void QQmlSortFilterProxyModel::_q_sourceDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QVector<int> &roles)
+{
+    static QMetaMethod super_q_sourceDataChanged = [] {
+        int id = QSortFilterProxyModel::staticMetaObject.indexOfSlot("_q_sourceDataChanged(QModelIndex,QModelIndex,QVector<int>)");
+        return QSortFilterProxyModel::staticMetaObject.method(id);
+    }();
+    Q_ASSERT(super_q_sourceDataChanged.isValid());
+
+    // Ignore columns other than the first
+    bool skipFilters = topLeft.column() > 0;
+
+    if (!skipFilters) {
+        // See if this is only about ignored roles and if so, skip filters.
+        QVector<int> filteredRoles = roles;
+
+        for (const auto &role : qAsConst(m_ignoredRoles)) {
+            bool ok;
+            auto iRole = role.toInt(&ok);
+            if (!ok) {
+                const auto name = role.toString();
+                iRole = roleForName(name);
+            }
+            if (iRole > -1) {
+                filteredRoles.removeAll(iRole);
+            }
+        }
+
+        skipFilters = filteredRoles.isEmpty();
+    }
+
+    if (skipFilters) {
+        emit dataChanged(mapFromSource(topLeft), mapFromSource(bottomRight), roles);
+        return;
+    }
+
+    bool ok = super_q_sourceDataChanged.invoke(this, Q_ARG(QModelIndex, topLeft), Q_ARG(QModelIndex, bottomRight), Q_ARG(QVector<int>, roles));
+    Q_ASSERT(ok);
+    Q_UNUSED(ok);
+}
+
 void QQmlSortFilterProxyModel::queueInvalidateProxyRoles()
 {
     queueInvalidate();
@@ -509,7 +605,7 @@ QVariantMap QQmlSortFilterProxyModel::modelDataMap(const QModelIndex& modelIndex
 {
     QVariantMap map;
     QHash<int, QByteArray> roles = roleNames();
-    for (QHash<int, QByteArray>::const_iterator it = roles.begin(); it != roles.end(); ++it)
+    for (QHash<int, QByteArray>::const_iterator it = roles.cbegin(); it != roles.cend(); ++it)
         map.insert(it.value(), sourceModel()->data(modelIndex, it.key()));
     return map;
 }
