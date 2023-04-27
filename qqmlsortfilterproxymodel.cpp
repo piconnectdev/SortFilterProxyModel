@@ -230,7 +230,12 @@ QVariant QQmlSortFilterProxyModel::sourceData(const QModelIndex &sourceIndex) co
 #else
         QVariant ret(m_sourceGetMethod.returnMetaType(), nullptr);
 #endif
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
         QGenericReturnArgument retArg(m_sourceGetMethod.typeName(), ret.data());
+#else
+        QMetaMethodReturnArgument retArg{m_sourceGetMethod.returnMetaType().iface(),
+                                         m_sourceGetMethod.typeName(), ret.data()};
+#endif
 
         bool success = false;
 
